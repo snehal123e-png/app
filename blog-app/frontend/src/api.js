@@ -5,7 +5,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api'
+  baseURL: 'https://app-zve5.onrender.com/api'
 });
 
 // Attach the JWT token to every outgoing request, if it exists in localStorage
