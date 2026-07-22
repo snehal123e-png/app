@@ -1,0 +1,10 @@
+{
+  "users": [],
+  "posts": [],
+  "comments": [],
+  "likes": [],
+  "nextUserId": 1,
+  "nextPostId": 1,
+  "nextCommentId": 1,
+  "nextLikeId": 1
+}
