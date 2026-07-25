@@ -5,7 +5,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5001/api'
+  baseURL: "https://chatapp-61ni.onrender.com/";
 });
 
 api.interceptors.request.use((config) => {
