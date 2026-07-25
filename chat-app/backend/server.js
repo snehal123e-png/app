@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
+const UserRoutes = require('./routes/User');
 const setupSocket = require('./socket');
 
 const app = express();
@@ -19,6 +20,7 @@ app.use(express.json());
 // --- Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/User', UserRoutes);
 
 app.get('/', (req, res) => {
   res.send('Chat API is running!');
