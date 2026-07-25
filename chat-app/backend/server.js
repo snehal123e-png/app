@@ -20,7 +20,7 @@ app.use(express.json());
 // --- Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/sers', userRoutes);
+app.use('/api/users', userRoutes);
 
 app.get('/', (req, res) => {
   res.send('Chat API is running!');
