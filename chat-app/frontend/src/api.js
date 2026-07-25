@@ -5,7 +5,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: "https://chatapp-61ni.onrender.com/";
+  baseURL: "https://chatapp-61ni.onrender.com/api",
 });
 
 api.interceptors.request.use((config) => {
