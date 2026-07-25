@@ -1,56 +1,418 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from "react";
+import EmojiPicker from "emoji-picker-react";
+import { connectSocket, getSocket } from "../socket";
 
-function ChatWindow({ title, messages, currentUserId, onSend, typingUser }) {
-  const [text, setText] = useState('');
-  const bottomRef = useRef(null);
 
-  // Auto-scroll to the latest message whenever messages change
+const ChatWindow = ({ selectedUser, messages = [], sendMessage, currentUser }) => {
+
+  const [text, setText] = useState("");
+  const [showEmoji, setShowEmoji] = useState(false);
+
+  const [chatMessages, setChatMessages] = useState(messages);
+
+  const messagesEndRef = useRef(null);
+
+
+
+  // Connect Socket + Receive Messages
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+
+    const socket = connectSocket();
+
+    if (!socket) return;
+
+
+    socket.on("receive_message", (data) => {
+
+      setChatMessages((prev) => [
+        ...prev,
+        data
+      ]);
+
+    });
+
+
+
+    return () => {
+
+      socket.off("receive_message");
+
+    };
+
+
+  }, []);
+
+
+
+  // Update messages from parent
+  useEffect(() => {
+
+    setChatMessages(messages);
+
   }, [messages]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!text.trim()) return;
-    onSend(text);
-    setText('');
+
+
+  // Auto scroll
+  useEffect(() => {
+
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth"
+    });
+
+  }, [chatMessages]);
+
+
+
+
+  const addEmoji = (emojiData) => {
+
+    setText((prev) => prev + emojiData.emoji);
+
   };
 
+
+
+
+
+  const handleSend = () => {
+
+
+    if (!text.trim()) return;
+
+
+
+    const messageData = {
+
+      receiverId: selectedUser.id,
+
+      text: text,
+
+      time: new Date()
+        .toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit"
+        }),
+
+      senderId: currentUser,
+
+      senderName: "Me"
+
+    };
+
+
+
+    // Send through Socket.io
+
+    const socket = getSocket();
+
+
+    if (socket) {
+
+      socket.emit(
+        "send_message",
+        messageData
+      );
+
+    }
+
+
+
+    // Display instantly
+
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        ...messageData,
+        senderId: currentUser
+      }
+    ]);
+
+
+
+    // Optional parent update
+
+    if (sendMessage) {
+      sendMessage(text);
+    }
+
+
+
+    setText("");
+
+    setShowEmoji(false);
+
+  };
+
+
+
+
+
+  const handleKeyPress = (e) => {
+
+    if (e.key === "Enter") {
+
+      handleSend();
+
+    }
+
+  };
+
+
+
+
+
   return (
+
     <div className="chat-window">
+
+
+      {/* Header */}
+
       <div className="chat-header">
-        <h2>{title}</h2>
+
+        {selectedUser ? (
+
+          <>
+
+            <div className="avatar">
+              {selectedUser.name?.charAt(0)}
+            </div>
+
+
+            <div>
+
+              <b>
+                {selectedUser.name}
+              </b>
+
+
+              {
+                selectedUser.online &&
+                <div className="typing-text">
+                  Online
+                </div>
+              }
+
+
+            </div>
+
+
+          </>
+
+
+        ) : (
+
+          <h3>
+            Select a chat
+          </h3>
+
+        )}
+
       </div>
+
+
+
+
+
+      {/* Messages */}
 
       <div className="messages">
-        {messages.map((m) => {
-          const isMine = (m.senderId || m.fromId) === currentUserId;
-          return (
-            <div key={m.id + '-' + m.createdAt} className={`message ${isMine ? 'mine' : ''}`}>
-              {!isMine && <span className="message-sender">{m.senderName}</span>}
-              <span className="message-text">{m.text}</span>
-              <span className="message-time">
-                {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          );
-        })}
-        {messages.length === 0 && <p className="empty-hint">No messages yet. Say hello!</p>}
-        {typingUser && <p className="typing-indicator">{typingUser} is typing...</p>}
-        <div ref={bottomRef} />
+
+
+        {
+          chatMessages.length === 0 ?
+
+
+            (
+
+              <div className="empty-chat">
+                No messages yet
+              </div>
+
+            )
+
+
+            :
+
+
+            chatMessages.map((msg, index) => {
+
+
+              const mine =
+                msg.senderId === currentUser;
+
+
+
+              return (
+
+                <div
+                  key={index}
+                  className={`message-row ${mine ? "mine" : "other"
+                    }`}
+                >
+
+
+                  <div className="message-bubble">
+
+
+                    {
+                      !mine &&
+
+                      <div className="sender-name">
+
+                        {msg.senderName}
+
+                      </div>
+
+                    }
+
+
+
+                    <div className="message-text">
+
+                      {msg.text}
+
+                    </div>
+
+
+
+
+                    <div className="message-footer">
+
+                      <span>
+                        {msg.time}
+                      </span>
+
+
+                      {
+                        mine &&
+
+                        <span className="read-status">
+                          ✓✓
+                        </span>
+
+                      }
+
+
+                    </div>
+
+
+                  </div>
+
+
+                </div>
+
+              );
+
+
+            })
+
+        }
+
+
+
+        <div ref={messagesEndRef} />
+
+
       </div>
 
-      <form className="message-input-form" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Type a message..."
-        />
-        <button type="submit">Send</button>
-      </form>
+
+
+
+
+      {/* Emoji Picker */}
+
+      {
+        showEmoji &&
+
+        <div
+          style={{
+            position: "absolute",
+            bottom: "75px",
+            right: "20px",
+            zIndex: 10
+          }}
+        >
+
+          <EmojiPicker
+            onEmojiClick={addEmoji}
+            height={350}
+            width={300}
+          />
+
+        </div>
+
+      }
+
+
+
+
+
+      {/* Input */}
+
+      {
+        selectedUser &&
+
+
+        <div className="chat-input-area">
+
+
+          <button
+            className="icon-btn"
+            onClick={() => setShowEmoji(!showEmoji)}
+          >
+
+            😊
+
+          </button>
+
+
+
+
+          <input
+
+            type="text"
+
+            placeholder="Type a message..."
+
+            value={text}
+
+            onChange={(e) => setText(e.target.value)}
+
+            onKeyDown={handleKeyPress}
+
+          />
+
+
+
+
+
+          <button
+
+            className="send-btn"
+
+            onClick={handleSend}
+
+          >
+
+            ➤
+
+          </button>
+
+
+
+        </div>
+
+      }
+
+
+
     </div>
+
   );
-}
+
+};
+
 
 export default ChatWindow;
