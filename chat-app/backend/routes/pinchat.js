@@ -6,117 +6,168 @@ const router = express.Router();
 
 
 // ==========================
-// Pin / Unpin Chat
+// GET PINNED CHATS
 // ==========================
 
-router.post("/:userId", authMiddleware, (req, res) => {
+router.get(
+    "/",
+    authMiddleware,
+    (req, res) => {
 
-    const db = readDB();
+        try {
 
-
-    const user = db.users.find(
-        u => u.id === req.user.id
-    );
-
-
-    if (!user) {
-
-        return res.status(404).json({
-            message: "User not found"
-        });
-
-    }
+            const db = readDB();
 
 
-
-    // Create pinnedChats if missing
-
-    if (!user.pinnedChats) {
-
-        user.pinnedChats = [];
-
-    }
-
-
-
-    const chatId = Number(req.params.userId);
-
-
-
-    // Unpin
-
-    if (user.pinnedChats.includes(chatId)) {
-
-
-        user.pinnedChats =
-            user.pinnedChats.filter(
-                id => id !== chatId
+            const user = db.users.find(
+                u => u.id === req.user.id
             );
 
 
+            if (!user) {
+
+                return res.status(404).json({
+                    message: "User not found"
+                });
+
+            }
+
+
+            res.json(
+                user.pinnedChats || []
+            );
+
+
+        } catch (error) {
+
+            res.status(500).json({
+                message: "Server error",
+                error: error.message
+            });
+
+        }
+
     }
+);
 
-    // Pin
-
-    else {
-
-
-        user.pinnedChats.push(chatId);
-
-
-    }
-
-
-
-    writeDB(db);
-
-
-
-    res.json({
-
-        pinnedChats: user.pinnedChats
-
-    });
-
-
-});
 
 
 
 
 // ==========================
-// Get Pinned Chats
+// PIN / UNPIN CHAT
 // ==========================
 
-router.get("/", authMiddleware, (req, res) => {
+router.post(
+    "/:userId",
+    authMiddleware,
+    (req, res) => {
 
 
-    const db = readDB();
+        try {
+
+
+            const db = readDB();
 
 
 
-    const user = db.users.find(
-        u => u.id === req.user.id
-    );
+            const user = db.users.find(
+                u => u.id === req.user.id
+            );
 
 
 
-    if (!user) {
+            if (!user) {
 
-        return res.status(404).json({
-            message: "User not found"
-        });
+                return res.status(404).json({
+                    message: "User not found"
+                });
+
+            }
+
+
+
+
+
+            if (!user.pinnedChats) {
+
+                user.pinnedChats = [];
+
+            }
+
+
+
+            const chatId =
+                Number(req.params.userId);
+
+
+
+
+
+            const alreadyPinned =
+                user.pinnedChats.includes(chatId);
+
+
+
+
+            if (alreadyPinned) {
+
+
+                user.pinnedChats =
+                    user.pinnedChats.filter(
+                        id => id !== chatId
+                    );
+
+
+            }
+
+            else {
+
+
+                user.pinnedChats.push(chatId);
+
+
+            }
+
+
+
+
+            writeDB(db);
+
+
+
+
+            res.json({
+
+                success: true,
+
+                pinnedChats: user.pinnedChats,
+
+                pinned:
+                    !alreadyPinned
+
+            });
+
+
+
+        }
+        catch (error) {
+
+
+            res.status(500).json({
+
+                message: "Server error",
+
+                error: error.message
+
+            });
+
+
+        }
+
 
     }
-
-
-
-    res.json(
-        user.pinnedChats || []
-    );
-
-
-});
+);
 
 
 
