@@ -69,8 +69,11 @@ function setupSocket(io) {
     // ==========================
     socket.on("room:message", ({ roomId, text }) => {
 
-      if (!text || !text.trim()) return;
-
+      if (
+        (!text || !text.trim()) &&
+        !image &&
+        !audio
+      ) return;
       const db = readDB();
 
       const message = {
