@@ -176,14 +176,14 @@ const ChatWindow = ({ selectedUser, messages = [], sendMessage, currentUser }) =
           <>
 
             <div className="avatar">
-              {selectedUser.name?.charAt(0)}
+              {(selectedUser.username || selectedUser.name)?.charAt(0)}
             </div>
 
 
             <div>
 
               <b>
-                {selectedUser.name}
+                <b>{selectedUser.username || selectedUser.name}</b>
               </b>
 
 

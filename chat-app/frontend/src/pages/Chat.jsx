@@ -259,23 +259,10 @@ function Chat({ user, onLogout }) {
         {selected && (
 
           <ChatWindow
-
-            title={
-              selected.type === "room"
-                ? selected.name
-                : selected.name
-            }
-
+            selectedUser={selected}
             messages={currentMessages}
-
-            currentUserId={user.id}
-
-            onSend={handleSend}
-
-            onTyping={handleTyping}
-
-            typingUser={typingUser}
-
+            sendMessage={handleSend}
+            currentUser={user.id}
           />
 
         )}
