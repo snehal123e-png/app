@@ -1,935 +1,1573 @@
-// socket/index.js
-
 const jwt = require("jsonwebtoken");
 const { readDB, writeDB } = require("../db");
+
 
 // userId -> socket.id
 const onlineUsers = new Map();
 
+
 // userId -> lastSeen
 const lastSeen = new Map();
 
+
+
 function getPresence() {
+
   return {
-    onlineUsers: Array.from(onlineUsers.keys()),
-    lastSeen: Object.fromEntries(lastSeen),
+
+    onlineUsers: Array.from(
+      onlineUsers.keys()
+    ),
+
+    lastSeen: Object.fromEntries(
+      lastSeen
+    )
+
   };
+
 }
 
+
+
 function setupSocket(io) {
+
+
   // ==========================
-  // Authenticate Socket
+  // Socket Authentication
   // ==========================
+
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token;
+
+
+    const token =
+      socket.handshake.auth?.token;
+
 
     if (!token) {
-      return next(new Error("Authentication error"));
+
+      return next(
+        new Error("Authentication error")
+      );
+
     }
 
+
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+
+      const decoded =
+        jwt.verify(
+          token,
+          process.env.JWT_SECRET
+        );
+
 
       socket.user = decoded;
 
+
       next();
-    } catch (err) {
-      next(new Error("Invalid Token"));
+
+
     }
+    catch (err) {
+
+
+      next(
+        new Error("Invalid Token")
+      );
+
+
+    }
+
+
   });
 
-  // ==========================
-  // New Connection
-  // ==========================
-  io.on("connection", (socket) => {
-    const { id: userId, username } = socket.user;
 
-    console.log(`${username} connected`);
 
-    onlineUsers.set(userId, socket.id);
 
-    io.emit("presence:update", getPresence());
 
-    // ==========================
-    // Join Room
-    // ==========================
-    socket.on("room:join", (roomId) => {
-      socket.join(`room-${roomId}`);
-    });
+  io.on(
+    "connection",
+    (socket) => {
 
-    // ==========================
-    // Leave Room
-    // ==========================
-    socket.on("room:leave", (roomId) => {
-      socket.leave(`room-${roomId}`);
-    });
 
-    // ==========================
-    // Room Message
-    // ==========================
-    socket.on("room:message", ({ roomId, text }) => {
+      const {
+        id: userId,
+        username
+      } = socket.user;
 
-      if (
-        (!text || !text.trim()) &&
-        !image &&
-        !audio
-      ) return;
-      const db = readDB();
 
-      const message = {
-        id: db.nextMessageId,
-        roomId: Number(roomId),
-        senderId: userId,
-        senderName: username,
-        text: text.trim(),
-        createdAt: new Date().toISOString(),
-      };
 
-      db.messages.push(message);
-      db.nextMessageId++;
-
-      writeDB(db);
-
-      io.to(`room-${roomId}`).emit("room:message", message);
-    });
-
-    // ==========================
-    // Private Message
-    // ==========================
-    socket.on(
-      "private:message",
-      ({
-        toUserId,
-        text,
-        image = null,
-        file = null,
-        audio = null,
-        replyTo = null
-      }) => {
-        if (!text || !text.trim()) return;
-
-        const db = readDB();
-
-        const receiverSocket = onlineUsers.get(Number(toUserId));
-
-        const message = {
-          id: db.nextPrivateMessageId++,
-
-          fromId: userId,
-          toId: Number(toUserId),
-
-          senderName: username,
-
-          text: text.trim(),
-          image: image,
-          audio: audio,
-
-          createdAt: new Date().toISOString(),
-
-          status: receiverSocket ? "delivered" : "sent",
-
-          readAt: null,
-
-          replyTo,
-
-          deletedFor: [],
-
-          deletedForEveryone: false
-        };
-
-        db.privateMessages.push(message);
-
-        writeDB(db);
-
-        if (receiverSocket) {
-          io.to(receiverSocket).emit("private:message", message);
-        }
-
-        socket.emit("private:message", message);
-
-      });
-
-    // ==========================
-    // Room Typing
-    // ==========================
-    socket.on("room:typing", ({ roomId }) => {
-
-      socket.to(`room-${roomId}`).emit("room:typing", {
+      console.log(
         username,
-      });
-
-    });
-
-    // ==========================
-    // Private Typing
-    // ==========================
-    socket.on("private:typing", ({ toUserId }) => {
-
-      const receiverSocket = onlineUsers.get(Number(toUserId));
-
-      if (receiverSocket) {
-        io.to(receiverSocket).emit("private:typing", {
-          fromId: userId,
-          username,
-        });
-      }
-
-    });
-
-    // ==========================
-    // Message Read
-    // ==========================
-    socket.on("message:read", ({ messageId }) => {
-
-      const db = readDB();
-
-      const message = db.privateMessages.find(
-        m => m.id === messageId
-      );
-
-      if (!message) return;
-
-      message.status = "read";
-      message.readAt = new Date().toISOString();
-
-      writeDB(db);
-
-      const senderSocket = onlineUsers.get(message.fromId);
-
-      if (senderSocket) {
-        io.to(senderSocket).emit("message:read", {
-          messageId
-        });
-      }
-
-    });
-    socket.on("clear:chat", ({ userId }) => {
-
-      const db = readDB();
-
-
-      db.privateMessages =
-        db.privateMessages.filter(
-          msg =>
-            !(
-              (msg.fromId === socket.user.id &&
-                msg.toId === Number(userId))
-              ||
-              (msg.fromId === Number(userId) &&
-                msg.toId === socket.user.id)
-            )
-        );
-
-
-      writeDB(db);
-
-
-      socket.emit(
-        "chat:cleared"
+        "connected"
       );
 
 
-    });
 
-    // ==========================
-    // Delete Message
-    // ==========================
-
-    socket.on("message:delete", ({ messageId, type }) => {
-
-
-      const db = readDB();
-
-
-      const message = db.privateMessages.find(
-        m => m.id === messageId
+      onlineUsers.set(
+        userId,
+        socket.id
       );
 
 
-      if (!message) return;
+
+      io.emit(
+        "presence:update",
+        getPresence()
+      );
 
 
 
-      // Delete for everyone
-
-      if (type === "everyone") {
-
-
-        message.deletedForEveryone = true;
-
-        message.text = "This message was deleted";
 
 
 
-        // notify both users
-
-        const receiverSocket =
-          onlineUsers.get(message.toId);
-
-
-        const senderSocket =
-          onlineUsers.get(message.fromId);
+      // ==========================
+      // ROOM JOIN
+      // ==========================
 
 
-
-        if (receiverSocket) {
-
-          io.to(receiverSocket)
-            .emit("message:deleted", {
-              messageId,
-              type: "everyone"
-            });
-
-        }
+      socket.on(
+        "room:join",
+        (roomId) => {
 
 
-
-        if (senderSocket) {
-
-          io.to(senderSocket)
-            .emit("message:deleted", {
-              messageId,
-              type: "everyone"
-            });
-
-        }
-
-
-      }
-
-
-
-      // Delete for me
-
-      if (type === "me") {
-
-
-        if (!message.deletedFor) {
-
-          message.deletedFor = [];
-
-        }
-
-
-        message.deletedFor.push(userId);
-
-
-
-        socket.emit("message:deleted", {
-
-          messageId,
-
-          type: "me"
-
-        });
-
-
-      }
-
-
-
-      writeDB(db);
-
-
-    });
-    // ==========================
-    // Message Reaction
-    // ==========================
-
-    socket.on(
-      "message:reaction",
-      ({ messageId, emoji }) => {
-
-
-        const db = readDB();
-
-
-        const message =
-          db.privateMessages.find(
-            m => m.id === messageId
+          socket.join(
+            `room-${roomId}`
           );
 
 
-        if (!message) return;
-
-
-
-        if (!message.reactions) {
-
-          message.reactions = [];
-
         }
+      );
 
 
 
-        const existing =
-          message.reactions.find(
-            r =>
-              r.userId === userId &&
-              r.emoji === emoji
+
+
+
+      // ==========================
+      // ROOM MESSAGE FIXED
+      // ==========================
+
+
+      ssocket.on(
+        "room:message",
+        ({
+          roomId,
+          text,
+          image = null,
+          audio = null
+        }) => {
+
+
+          if (
+            (!text || !text.trim())
+            &&
+            !image
+            &&
+            !audio
+          )
+            return;
+
+
+
+          const db =
+            readDB();
+
+
+
+          const message = {
+
+
+            id:
+              db.nextMessageId,
+
+
+            roomId:
+              Number(roomId),
+
+
+            senderId:
+              userId,
+
+
+            senderName:
+              username,
+
+
+            text:
+              text
+                ?
+                text.trim()
+                :
+                "",
+
+
+            image,
+
+
+            audio,
+
+
+            createdAt:
+              new Date()
+                .toISOString()
+
+
+          };
+
+
+
+
+          db.messages.push(
+            message
           );
 
 
-
-        if (existing) {
-
-
-          message.reactions =
-            message.reactions.filter(
-              r =>
-                !(
-                  r.userId === userId &&
-                  r.emoji === emoji
-                )
-            );
-
-
-        }
-        else {
-
-
-          message.reactions.push({
-
-            userId: userId,
-
-            emoji: emoji
-
-          });
-
-
-        }
+          db.nextMessageId++;
 
 
 
-        writeDB(db);
+          writeDB(db);
 
 
 
 
-        const receiverSocket =
-          onlineUsers.get(message.toId);
-
-
-
-        const senderSocket =
-          onlineUsers.get(message.fromId);
-
-
-
-        const reactionData = {
-
-          messageId,
-
-          reactions: message.reactions
-
-        };
-
-
-
-        if (receiverSocket) {
-
-          io.to(receiverSocket)
+          io.to(
+            `room-${roomId}`
+          )
             .emit(
-              "message:reaction",
-              reactionData
+              "room:message",
+              message
             );
 
+
+
         }
+      );
 
 
 
-        if (senderSocket) {
 
-          io.to(senderSocket)
-            .emit(
-              "message:reaction",
-              reactionData
+
+      // ==========================
+      // PRIVATE MESSAGE FIXED
+      // ==========================
+
+
+      socket.on(
+        "private:message",
+        ({
+          toUserId,
+          text,
+          image = null,
+          audio = null,
+          replyTo = null
+        }) => {
+
+
+
+          // FIX
+          if (
+            (!text || !text.trim())
+            &&
+            !image
+            &&
+            !audio
+          )
+            return;
+
+
+
+
+
+          const db =
+            readDB();
+
+
+
+
+          const receiverSocket =
+            onlineUsers.get(
+              Number(toUserId)
             );
 
-        }
 
 
 
-      });
-    // ==========================
-    // Forward Message
-    // ==========================
 
-    socket.on(
-      "message:forward",
-      ({ messageId, toUserId }) => {
+          const message = {
 
 
-        const db = readDB();
+            id:
+              db.nextPrivateMessageId++,
 
 
-        const oldMessage =
-          db.privateMessages.find(
-            m => m.id === messageId
-          );
 
+            fromId:
+              userId,
 
 
-        if (!oldMessage) return;
 
+            toId:
+              Number(toUserId),
 
 
-        const receiverSocket =
-          onlineUsers.get(Number(toUserId));
 
 
+            senderName:
+              username,
 
-        const newMessage = {
 
-          id: db.nextPrivateMessageId++,
 
-          fromId: userId,
+            text:
+              text
+                ?
+                text.trim()
+                :
+                "",
 
-          toId: Number(toUserId),
 
-          senderName: username,
 
+            image,
 
-          // Message content
-          text: oldMessage.text,
+            audio,
 
 
-          // Media
-          image: oldMessage.image || null,
 
-          audio: oldMessage.audio || null,
+            createdAt:
+              new Date()
+                .toISOString(),
 
-          file: oldMessage.file || null,
 
 
-          // Forward flag
-          forwarded: true,
+            status:
+              receiverSocket
+                ?
+                "delivered"
+                :
+                "sent",
 
 
-          // Original sender info
-          forwardedFrom:
-          {
-            id: oldMessage.fromId,
-            name: oldMessage.senderName
-          },
 
 
-          createdAt: new Date().toISOString(),
+            readAt: null,
 
 
-          status:
-            receiverSocket
-              ?
-              "delivered"
-              :
-              "sent",
 
+            replyTo,
 
-          readAt: null,
 
-          replyTo: null
 
-        };
+            deletedFor: [],
 
 
+            deletedForEveryone: false
 
-        db.privateMessages.push(newMessage);
 
+          };
 
-        writeDB(db);
 
 
-
-        if (receiverSocket) {
-
-          io.to(receiverSocket)
-            .emit(
-              "private:message",
-              newMessage
-            );
-
-        }
-
-
-
-        socket.emit(
-          "private:message",
-          newMessage
-        );
-
-
-
-      });
-    // ==========================
-    // Edit Message
-    // ==========================
-
-    socket.on(
-      "message:edit",
-      ({ messageId, newText }) => {
-
-
-        const db = readDB();
-
-
-        const message =
-          db.privateMessages.find(
-            m => m.id === messageId
-          );
-
-
-
-        if (!message) return;
-
-
-        // Only sender can edit
-
-        if (message.fromId !== userId)
-          return;
-
-
-
-        message.text = newText;
-
-        message.edited = true;
-
-        message.editedAt =
-          new Date().toISOString();
-
-
-
-        writeDB(db);
-
-
-
-        const receiverSocket =
-          onlineUsers.get(message.toId);
-
-
-        const senderSocket =
-          onlineUsers.get(message.fromId);
-
-
-
-        const data = {
-
-          messageId,
-
-          text: newText,
-
-          edited: true,
-
-          editedAt: message.editedAt
-
-        };
-
-
-
-        if (receiverSocket) {
-
-          io.to(receiverSocket)
-            .emit(
-              "message:edited",
-              data
-            );
-
-        }
-
-
-
-        if (senderSocket) {
-
-          io.to(senderSocket)
-            .emit(
-              "message:edited",
-              data
-            );
-
-        }
-
-
-
-      });
-    // ==========================
-    // Pin Message
-    // ==========================
-
-    socket.on(
-      "message:pin",
-      ({ messageId }) => {
-
-
-        const db = readDB();
-
-
-        const message =
-          db.privateMessages.find(
-            m => m.id === messageId
-          );
-
-
-
-        if (!message) return;
-
-
-
-        message.pinned =
-          !message.pinned;
-
-
-
-        message.pinnedAt =
-          message.pinned
-            ?
-            new Date().toISOString()
-            :
-            null;
-
-
-
-        writeDB(db);
-
-
-
-        const data = {
-
-          messageId,
-
-          pinned: message.pinned,
-
-          pinnedAt: message.pinnedAt
-
-        };
-
-
-
-        const receiverSocket =
-          onlineUsers.get(message.toId);
-
-
-
-        const senderSocket =
-          onlineUsers.get(message.fromId);
-
-
-
-        if (receiverSocket) {
-
-          io.to(receiverSocket)
-            .emit(
-              "message:pinned",
-              data
-            );
-
-        }
-
-
-
-        if (senderSocket) {
-
-          io.to(senderSocket)
-            .emit(
-              "message:pinned",
-              data
-            );
-
-        }
-
-
-
-      });
-    // ==========================
-    // Join Group
-    // ==========================
-
-    socket.on(
-      "group:join",
-      (groupId) => {
-
-        socket.join(
-          `group-${groupId}`
-        );
-
-      });
-
-
-
-
-    // ==========================
-    // Group Message
-    // ==========================
-
-    socket.on(
-      "group:message",
-      ({ groupId, text }) => {
-
-
-        if (!text.trim())
-          return;
-
-
-
-        const db = readDB();
-
-
-
-        const message = {
-
-
-          id:
-            db.nextMessageId,
-
-
-          groupId: Number(groupId),
-
-
-          senderId: userId,
-
-
-          senderName: username,
-
-
-          text: text.trim(),
-
-
-          createdAt:
-            new Date().toISOString()
-
-
-        };
-
-
-
-        db.messages.push(message);
-
-
-        db.nextMessageId++;
-
-
-        writeDB(db);
-
-
-
-        io.to(
-          `group-${groupId}`
-        )
-          .emit(
-            "group:message",
+          db.privateMessages.push(
             message
           );
 
 
 
-      });
-    // ==========================
-    // Star / Unstar Message
-    // ==========================
-
-    socket.on(
-      "message:star",
-      ({ messageId, starred }) => {
+          writeDB(db);
 
 
-        const db = readDB();
 
 
-        const message =
-          db.privateMessages.find(
-            m => m.id === messageId
+
+          if (receiverSocket) {
+
+
+            io.to(receiverSocket)
+              .emit(
+                "private:message",
+                message
+              );
+
+
+          }
+
+
+
+
+          socket.emit(
+            "private:message",
+            message
           );
 
 
-        if (!message) return;
+
+
+        }
+      );
+      // ==========================
+      // PRIVATE TYPING
+      // ==========================
+
+      socket.on(
+        "private:typing",
+        ({
+          toUserId
+        }) => {
+
+
+          const receiverSocket =
+            onlineUsers.get(
+              Number(toUserId)
+            );
 
 
 
-        message.starred = starred;
+          if (receiverSocket) {
+
+
+            io.to(receiverSocket)
+              .emit(
+                "private:typing",
+                {
+                  fromId: userId,
+                  username
+                }
+              );
+
+
+          }
+
+
+        }
+      );
 
 
 
-        if (starred) {
+
+
+
+
+      // ==========================
+      // MESSAGE READ
+      // ==========================
+
+
+      socket.on(
+        "message:read",
+        ({
+          messageId
+        }) => {
+
+
+          const db =
+            readDB();
+
+
+
+          const message =
+            db.privateMessages.find(
+              m =>
+                m.id === messageId
+            );
+
+
+
+          if (!message)
+            return;
+
+
+
+
+          message.status =
+            "read";
+
+
+
+          message.readAt =
+            new Date()
+              .toISOString();
+
+
+
+          writeDB(db);
+
+
+
+
+          const senderSocket =
+            onlineUsers.get(
+              message.fromId
+            );
+
+
+
+          if (senderSocket) {
+
+
+            io.to(senderSocket)
+              .emit(
+                "message:read",
+                {
+                  messageId
+                }
+              );
+
+
+          }
+
+
+
+        }
+      );
+
+
+
+
+
+
+
+
+
+      // ==========================
+      // CLEAR CHAT
+      // ==========================
+
+
+      socket.on(
+        "clear:chat",
+        ({
+          userId: otherUserId
+        }) => {
+
+
+          const db =
+            readDB();
+
+
+
+
+          db.privateMessages =
+            db.privateMessages.filter(
+              msg => !(
+
+                (
+                  msg.fromId === socket.user.id
+                  &&
+                  msg.toId === Number(otherUserId)
+                )
+
+                ||
+
+                (
+                  msg.fromId === Number(otherUserId)
+                  &&
+                  msg.toId === socket.user.id
+                )
+
+              )
+            );
+
+
+
+          writeDB(db);
+
+
+
+          socket.emit(
+            "chat:cleared"
+          );
+
+
+        }
+      );
+
+
+
+
+
+
+
+
+
+      // ==========================
+      // DELETE MESSAGE
+      // ==========================
+
+
+      socket.on(
+        "message:delete",
+        ({
+          messageId,
+          type
+        }) => {
+
+
+          const db =
+            readDB();
+
+
+
+          const message =
+            db.privateMessages.find(
+              m =>
+                m.id === messageId
+            );
+
+
+
+          if (!message)
+            return;
+
+
+
+
+          if (type === "everyone") {
+
+
+
+            message.deletedForEveryone =
+              true;
+
+
+
+            message.text =
+              "This message was deleted";
+
+
+
+
+            const receiverSocket =
+              onlineUsers.get(
+                message.toId
+              );
+
+
+
+            const senderSocket =
+              onlineUsers.get(
+                message.fromId
+              );
+
+
+
+
+            if (receiverSocket) {
+
+
+              io.to(receiverSocket)
+                .emit(
+                  "message:deleted",
+                  {
+                    messageId,
+                    type
+                  }
+                );
+
+
+            }
+
+
+
+
+            if (senderSocket) {
+
+
+              io.to(senderSocket)
+                .emit(
+                  "message:deleted",
+                  {
+                    messageId,
+                    type
+                  }
+                );
+
+
+            }
+
+
+
+          }
+
+
+
+
+
+
+          if (type === "me") {
+
+
+
+            if (!message.deletedFor) {
+
+              message.deletedFor = [];
+
+            }
+
+
+
+            message.deletedFor.push(
+              userId
+            );
+
+
+
+            socket.emit(
+              "message:deleted",
+              {
+                messageId,
+                type
+              }
+            );
+
+
+
+          }
+
+
+
+          writeDB(db);
+
+
+
+        }
+      );
+
+
+
+
+
+
+
+
+
+
+      // ==========================
+      // EDIT MESSAGE
+      // ==========================
+
+
+      socket.on(
+        "message:edit",
+        ({
+          messageId,
+          newText
+        }) => {
+
+
+          const db =
+            readDB();
+
+
+
+          const message =
+            db.privateMessages.find(
+              m =>
+                m.id === messageId
+            );
+
+
+
+          if (!message)
+            return;
+
+
+
+
+          if (message.fromId !== userId)
+            return;
+
+
+
+
+
+          message.text =
+            newText;
+
+
+
+          message.edited =
+            true;
+
+
+
+          message.editedAt =
+            new Date()
+              .toISOString();
+
+
+
+
+          writeDB(db);
+
+
+
+
+          const data = {
+
+
+            messageId,
+
+            text: newText,
+
+            edited: true,
+
+            editedAt:
+              message.editedAt
+
+
+          };
+
+
+
+
+          const receiverSocket =
+            onlineUsers.get(
+              message.toId
+            );
+
+
+
+          const senderSocket =
+            onlineUsers.get(
+              message.fromId
+            );
+
+
+
+
+          if (receiverSocket) {
+
+
+            io.to(receiverSocket)
+              .emit(
+                "message:edited",
+                data
+              );
+
+
+          }
+
+
+
+
+          if (senderSocket) {
+
+
+            io.to(senderSocket)
+              .emit(
+                "message:edited",
+                data
+              );
+
+
+          }
+
+
+
+
+        }
+      );
+      // ==========================
+      // MESSAGE REACTION
+      // ==========================
+
+      socket.on(
+        "message:reaction",
+        ({
+          messageId,
+          emoji
+        }) => {
+
+
+          const db =
+            readDB();
+
+
+
+          const message =
+            db.privateMessages.find(
+              m =>
+                m.id === messageId
+            );
+
+
+
+          if (!message)
+            return;
+
+
+
+          if (!message.reactions) {
+
+            message.reactions = [];
+
+          }
+
+
+
+          const existing =
+            message.reactions.find(
+              r =>
+                r.userId === userId &&
+                r.emoji === emoji
+            );
+
+
+
+
+          if (existing) {
+
+
+            message.reactions =
+              message.reactions.filter(
+                r =>
+                  !(
+                    r.userId === userId &&
+                    r.emoji === emoji
+                  )
+              );
+
+
+          }
+          else {
+
+
+            message.reactions.push({
+
+              userId,
+              emoji
+
+            });
+
+
+          }
+
+
+
+
+          writeDB(db);
+
+
+
+
+          const data = {
+
+            messageId,
+
+            reactions:
+              message.reactions
+
+          };
+
+
+
+          const senderSocket =
+            onlineUsers.get(
+              message.fromId
+            );
+
+
+          const receiverSocket =
+            onlineUsers.get(
+              message.toId
+            );
+
+
+
+          if (senderSocket) {
+
+            io.to(senderSocket)
+              .emit(
+                "message:reaction",
+                data
+              );
+
+          }
+
+
+          if (receiverSocket) {
+
+            io.to(receiverSocket)
+              .emit(
+                "message:reaction",
+                data
+              );
+
+          }
+
+
+
+        }
+      );
+
+
+
+
+
+
+
+
+
+      // ==========================
+      // FORWARD MESSAGE
+      // ==========================
+
+
+      socket.on(
+        "message:forward",
+        ({
+          messageId,
+          toUserId
+        }) => {
+
+
+          const db =
+            readDB();
+
+
+
+          const oldMessage =
+            db.privateMessages.find(
+              m =>
+                m.id === messageId
+            );
+
+
+
+          if (!oldMessage)
+            return;
+
+
+
+
+          const receiverSocket =
+            onlineUsers.get(
+              Number(toUserId)
+            );
+
+
+
+
+          const newMessage = {
+
+
+            id:
+              db.nextPrivateMessageId++,
+
+
+
+            fromId:
+              userId,
+
+
+
+            toId:
+              Number(toUserId),
+
+
+
+            senderName:
+              username,
+
+
+
+            text:
+              oldMessage.text,
+
+
+
+            image:
+              oldMessage.image || null,
+
+
+
+            audio:
+              oldMessage.audio || null,
+
+
+
+            forwarded: true,
+
+
+
+            forwardedFrom: {
+
+              id:
+                oldMessage.fromId,
+
+
+              name:
+                oldMessage.senderName
+
+            },
+
+
+
+            createdAt:
+              new Date()
+                .toISOString(),
+
+
+
+            status:
+              receiverSocket
+                ?
+                "delivered"
+                :
+                "sent",
+
+
+
+            replyTo: null
+
+
+          };
+
+
+
+
+          db.privateMessages.push(
+            newMessage
+          );
+
+
+          writeDB(db);
+
+
+
+
+          if (receiverSocket) {
+
+
+            io.to(receiverSocket)
+              .emit(
+                "private:message",
+                newMessage
+              );
+
+
+          }
+
+
+
+
+          socket.emit(
+            "private:message",
+            newMessage
+          );
+
+
+
+
+        }
+      );
+
+
+
+
+
+
+
+
+
+      // ==========================
+      // PIN MESSAGE
+      // ==========================
+
+
+      socket.on(
+        "message:pin",
+        ({
+          messageId
+        }) => {
+
+
+          const db =
+            readDB();
+
+
+
+          const message =
+            db.privateMessages.find(
+              m =>
+                m.id === messageId
+            );
+
+
+
+          if (!message)
+            return;
+
+
+
+          message.pinned =
+            !message.pinned;
+
+
+
+          message.pinnedAt =
+            message.pinned
+              ?
+              new Date()
+                .toISOString()
+              :
+              null;
+
+
+
+
+          writeDB(db);
+
+
+
+
+          const data = {
+
+            messageId,
+
+            pinned:
+              message.pinned,
+
+
+            pinnedAt:
+              message.pinnedAt
+
+          };
+
+
+
+
+          const users = [
+
+            message.fromId,
+
+            message.toId
+
+          ];
+
+
+
+
+          users.forEach(id => {
+
+
+            const socketId =
+              onlineUsers.get(id);
+
+
+            if (socketId) {
+
+
+              io.to(socketId)
+                .emit(
+                  "message:pinned",
+                  data
+                );
+
+
+            }
+
+
+          });
+
+
+
+        }
+      );
+
+
+
+
+
+
+
+
+
+      // ==========================
+      // GROUP JOIN
+      // ==========================
+
+
+      socket.on(
+        "group:join",
+        (groupId) => {
+
+
+          socket.join(
+            `group-${groupId}`
+          );
+
+
+        }
+      );
+
+
+
+
+
+
+
+
+
+      // ==========================
+      // GROUP MESSAGE
+      // ==========================
+
+
+      socket.on(
+        "group:message",
+        ({
+          groupId,
+          text
+        }) => {
+
+
+          if (!text || !text.trim())
+            return;
+
+
+
+          const db =
+            readDB();
+
+
+
+
+          const message = {
+
+
+            id:
+              db.nextMessageId,
+
+
+            groupId:
+              Number(groupId),
+
+
+
+            senderId:
+              userId,
+
+
+
+            senderName:
+              username,
+
+
+
+            text:
+              text.trim(),
+
+
+
+            createdAt:
+              new Date()
+                .toISOString()
+
+
+          };
+
+
+
+
+          db.messages.push(
+            message
+          );
+
+
+
+          db.nextMessageId++;
+
+
+
+          writeDB(db);
+
+
+
+
+          io.to(
+            `group-${groupId}`
+          )
+            .emit(
+              "group:message",
+              message
+            );
+
+
+
+        }
+      );
+
+
+
+
+
+
+
+
+
+      // ==========================
+      // STAR MESSAGE
+      // ==========================
+
+
+      socket.on(
+        "message:star",
+        ({
+          messageId,
+          starred
+        }) => {
+
+
+          const db =
+            readDB();
+
+
+
+
+          const message =
+            db.privateMessages.find(
+              m =>
+                m.id === messageId
+            );
+
+
+
+          if (!message)
+            return;
+
+
+
+          message.starred =
+            starred;
+
+
 
           message.starredAt =
-            new Date().toISOString();
+            starred
+              ?
+              new Date()
+                .toISOString()
+              :
+              null;
+
+
+
+
+          writeDB(db);
+
+
+
+
+          const data = {
+
+            messageId,
+
+            starred,
+
+            starredAt:
+              message.starredAt
+
+          };
+
+
+
+
+          [
+            message.fromId,
+            message.toId
+          ]
+            .forEach(id => {
+
+
+              const socketId =
+                onlineUsers.get(id);
+
+
+
+              if (socketId) {
+
+
+                io.to(socketId)
+                  .emit(
+                    "message:starred",
+                    data
+                  );
+
+
+              }
+
+
+            });
+
+
+
 
         }
-        else {
-
-          message.starredAt = null;
-
-        }
+      );
 
 
 
-        writeDB(db);
 
 
 
-        // update both users
-
-        const senderSocket =
-          onlineUsers.get(message.fromId);
-
-
-        const receiverSocket =
-          onlineUsers.get(message.toId);
 
 
 
-        const data = {
-
-          messageId,
-
-          starred,
-
-          starredAt: message.starredAt
-
-        };
+      // ==========================
+      // DISCONNECT
+      // ==========================
 
 
+      socket.on(
+        "disconnect",
+        () => {
 
-        if (senderSocket) {
 
-          io.to(senderSocket)
-            .emit(
-              "message:starred",
-              data
-            );
-
-        }
+          console.log(
+            username,
+            "disconnected"
+          );
 
 
 
-        if (receiverSocket) {
+          onlineUsers.delete(
+            userId
+          );
 
-          io.to(receiverSocket)
-            .emit(
-              "message:starred",
-              data
-            );
+
+
+          lastSeen.set(
+            userId,
+            new Date()
+              .toISOString()
+          );
+
+
+
+          io.emit(
+            "presence:update",
+            getPresence()
+          );
+
+
 
         }
+      );
 
 
-      }
-    );
-    // ==========================
-    // Disconnect
-    // ==========================
-    socket.on("disconnect", () => {
 
-      console.log(`${username} disconnected`);
+    }
+  );
 
-      onlineUsers.delete(userId);
 
-      lastSeen.set(userId, new Date().toISOString());
+}
 
-      io.emit("presence:update", getPresence());
 
-    });
-
-  }); // end io.on("connection")
-} // end setupSocket
 
 module.exports = setupSocket;
-module.exports.onlineUsers = onlineUsers;
+
+module.exports.onlineUsers =
+  onlineUsers;
