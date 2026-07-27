@@ -40,13 +40,15 @@ router.get("/users", authMiddleware, (req, res) => {
 
   const contactIds = [];
 
-  db.contacts.forEach(contact => {
+  (db.contacts || []).forEach(contact => {
 
-    if (contact.user1 === myId)
+    if (contact.user1 === myId) {
       contactIds.push(contact.user2);
+    }
 
-    if (contact.user2 === myId)
+    if (contact.user2 === myId) {
       contactIds.push(contact.user1);
+    }
 
   });
 
@@ -68,7 +70,7 @@ router.get("/all-users", authMiddleware, (req, res) => {
   const db = readDB();
 
   const users = db.users
-    .filter(user => user.id !== req.user.id)
+    .filter(user => user.id !== myId)
     .map(user => ({
       id: user.id,
       username: user.username,

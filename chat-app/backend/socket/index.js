@@ -150,7 +150,7 @@ function setupSocket(io) {
       // ==========================
 
 
-      ssocket.on(
+      socket.on(
         "room:message",
         ({
           roomId,
