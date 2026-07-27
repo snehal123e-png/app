@@ -42,7 +42,7 @@ app.use("/api/contact", contactRoutes);
 // --- Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/pin-chat', pinChatRoutes);
+app.use("/api/pin-chat", pinChatRoutes);
 app.use('/api/star', starRoutes);
 app.use('/api/users', UserRoutes);
 app.use('/api/upload', uploadRoutes);
