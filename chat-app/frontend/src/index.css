@@ -328,3 +328,269 @@ body {
   right: 20px;
   z-index: 100;
 }
+
+.profile-page {
+  padding: 30px;
+  text-align: center;
+}
+
+.profile-image {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid #128C7E;
+}
+
+.avatar {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-right: 12px;
+}
+
+.typing-indicator {
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #777;
+  margin: 10px;
+
+}
+
+
+.typing-indicator span {
+
+  width: 7px;
+  height: 7px;
+  background: #777;
+  border-radius: 50%;
+
+  animation: typing 1.2s infinite;
+
+}
+
+
+.typing-indicator span:nth-child(2) {
+
+  animation-delay: .2s;
+
+}
+
+
+.typing-indicator span:nth-child(3) {
+
+  animation-delay: .4s;
+
+}
+
+
+@keyframes typing {
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+
+
+  30% {
+    transform: translateY(-5px);
+  }
+
+}
+
+.edited-label {
+
+  font-size: 12px;
+
+  color: #777;
+
+  margin-left: 5px;
+
+  font-style: italic;
+
+}
+
+
+.edit-btn {
+
+  margin-left: 5px;
+
+}
+
+.pinned-label {
+
+  font-size: 12px;
+
+  color: #555;
+
+  margin-bottom: 5px;
+
+  font-style: italic;
+
+}
+
+
+.pin-btn {
+
+  cursor: pointer;
+
+}
+
+.group-info {
+
+  padding: 20px;
+
+  background: white;
+
+  border-radius: 10px;
+
+}
+
+
+.group-info span {
+
+  color: #008000;
+
+  font-weight: bold;
+
+}
+
+
+.group-info button {
+
+  margin-top: 20px;
+
+  padding: 10px;
+
+  cursor: pointer;
+
+}
+
+.forwarded-label {
+
+  font-size: 12px;
+
+  color: #777;
+
+  font-style: italic;
+
+  margin-bottom: 5px;
+
+}
+
+.star-btn {
+
+  border: none;
+
+  background: none;
+
+  cursor: pointer;
+
+  font-size: 18px;
+
+}
+
+
+.star-display {
+
+  margin-left: 8px;
+
+}
+
+.starred-page {
+
+  padding: 20px;
+
+}
+
+
+.star-card {
+
+  background: white;
+
+  padding: 15px;
+
+  margin: 10px;
+
+  border-radius: 10px;
+
+  box-shadow: 0 2px 5px #ddd;
+
+}
+
+
+.star-card small {
+
+  display: block;
+
+  margin-top: 8px;
+
+  color: #777;
+
+}
+
+.message-search {
+
+  display: flex;
+
+  gap: 5px;
+
+}
+
+
+.message-search input {
+
+  padding: 8px;
+
+  border-radius: 15px;
+
+  border: 1px solid #ccc;
+
+}
+
+
+
+mark {
+
+  background: yellow;
+
+}
+
+.clear-search {
+
+  border: none;
+  background: #eee;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+
+}
+
+.unread-badge {
+
+  background: #25D366;
+
+  color: white;
+
+  font-size: 12px;
+
+  min-width: 20px;
+
+  height: 20px;
+
+  border-radius: 50%;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  margin-left: 8px;
+
+}

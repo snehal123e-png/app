@@ -4,7 +4,12 @@ import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Chat from './pages/Chat.jsx';
 import { disconnectSocket } from './socket.js';
-
+import Profile from "./pages/Profile";
+import Status from "./components/Status";
+import SearchUsers from "./pages/SearchUsers";
+import CreateGroup from "./components/CreateGroup";
+import StarredMessages from "./pages/StarredMessages";
+import Requests from "./pages/Requests";
 function App() {
   const [user, setUser] = useState(null);
 
@@ -42,6 +47,42 @@ function App() {
       <Route
         path="/register"
         element={user ? <Navigate to="/" /> : <Register onLogin={handleLogin} />}
+      />
+      <Route
+        path="/profile"
+        element={
+          user
+            ? <Profile user={user} />
+            : <Navigate to="/login" />
+        }
+      />
+      <Route
+        path="/search"
+        element={user ? <SearchUsers /> : <Navigate to="/login" />}
+      />
+
+      <Route
+        path="/requests"
+        element={user ? <Requests /> : <Navigate to="/login" />}
+      />
+      <Route
+        path="/status"
+        element={<Status />}
+      />
+      <Route
+        path="/create-group"
+        element={<CreateGroup />}
+      />
+      <Route
+
+        path="/starred"
+
+        element={
+          <StarredMessages
+            onBack={() => navigate("/chat")}
+          />
+        }
+
       />
     </Routes>
   );

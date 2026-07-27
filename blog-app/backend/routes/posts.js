@@ -1,162 +1,482 @@
-// routes/posts.js
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const { readDB, writeDB } = require('../db');
-const authMiddleware = require('../middleware/auth');
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const supabase = require("../supabase");
+const authMiddleware = require("../middleware/auth");
 
 const router = express.Router();
 
-// --- Configure Multer for image uploads ---
+/* ===========================
+   Multer Configuration
+=========================== */
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '..', 'uploads'));
+    cb(null, path.join(__dirname, "..", "uploads"));
   },
   filename: (req, file, cb) => {
-    const uniqueName = Date.now() + '-' + file.originalname.replace(/\s+/g, '_');
+    const uniqueName =
+      Date.now() + "-" + file.originalname.replace(/\s+/g, "_");
+
     cb(null, uniqueName);
-  }
+  },
 });
+
 const upload = multer({ storage });
 
-// Helper: attach author username + like count to a post object
-function enrichPost(db, post) {
-  const author = db.users.find((u) => u.id === post.authorId);
-  const likeCount = db.likes.filter((l) => l.postId === post.id).length;
-  return {
-    ...post,
-    author: author ? author.username : 'Unknown',
-    likeCount
-  };
-}
+/* ===========================
+      GET ALL POSTS
+=========================== */
 
-// GET all posts (newest first)
-router.get('/', (req, res) => {
-  const db = readDB();
-  const posts = [...db.posts]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .map((p) => enrichPost(db, p));
-  res.json(posts);
-});
-
-// GET a single post by id, with its comments
-router.get('/:id', (req, res) => {
-  const db = readDB();
-  const postId = parseInt(req.params.id);
-  const post = db.posts.find((p) => p.id === postId);
-
-  if (!post) return res.status(404).json({ message: 'Post not found.' });
-
-  const comments = db.comments
-    .filter((c) => c.postId === postId)
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-    .map((c) => {
-      const author = db.users.find((u) => u.id === c.authorId);
-      return { ...c, author: author ? author.username : 'Unknown' };
-    });
-
-  res.json({ ...enrichPost(db, post), comments });
-});
-
-// CREATE a new post (protected route, supports image upload)
-router.post('/', authMiddleware, upload.single('image'), (req, res) => {
+router.get("/", async (req, res) => {
   try {
-    const { title, content } = req.body;
-    if (!title || !content) {
-      return res.status(400).json({ message: 'Title and content are required.' });
+    const { data: posts, error } = await supabase
+      .from("posts")
+      .select(
+        `
+        *,
+        users!posts_author_id_fkey(username)
+      `
+      )
+      .order("created_at", {
+        ascending: false,
+      });
+
+    if (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: error.message,
+      });
     }
 
-    const db = readDB();
-    const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
+    const formattedPosts = [];
 
-    const newPost = {
-      id: db.nextPostId,
-      title,
-      content,
-      image: imagePath,
-      authorId: req.user.id,
-      createdAt: new Date().toISOString()
-    };
+    for (const post of posts) {
+      const { count } = await supabase
+        .from("likes")
+        .select("*", {
+          count: "exact",
+          head: true,
+        })
+        .eq("post_id", post.id);
 
-    db.posts.push(newPost);
-    db.nextPostId += 1;
-    writeDB(db);
+      formattedPosts.push({
+        id: post.id,
+        title: post.title,
+        content: post.content,
+        image: post.image,
 
-    res.status(201).json(newPost);
+        authorId: post.author_id,
+
+        author:
+          post.users?.username ||
+          "Unknown",
+
+        createdAt:
+          post.created_at,
+
+        likeCount:
+          count || 0,
+      });
+    }
+
+    res.json(formattedPosts);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Server error while creating post.' });
+
+    res.status(500).json({
+      message: "Server Error",
+    });
   }
 });
+/* ===========================
+      GET SINGLE POST
+=========================== */
 
-// DELETE a post (only the author can delete)
-router.delete('/:id', authMiddleware, (req, res) => {
-  const db = readDB();
-  const postId = parseInt(req.params.id);
-  const post = db.posts.find((p) => p.id === postId);
+router.get("/:id", async (req, res) => {
+  try {
+    const postId = parseInt(req.params.id);
 
-  if (!post) return res.status(404).json({ message: 'Post not found.' });
-  if (post.authorId !== req.user.id) {
-    return res.status(403).json({ message: 'You can only delete your own posts.' });
+    // Fetch post with author
+    const { data: post, error } = await supabase
+      .from("posts")
+      .select(
+        `
+        *,
+        users!posts_author_id_fkey(username)
+      `
+      )
+      .eq("id", postId)
+      .single();
+
+    if (error || !post) {
+      return res.status(404).json({
+        message: "Post not found.",
+      });
+    }
+
+    // Fetch comments with author names
+    const { data: comments, error: commentError } = await supabase
+      .from("comments")
+      .select(
+        `
+        *,
+        users!comments_author_id_fkey(username)
+      `
+      )
+      .eq("post_id", postId)
+      .order("created_at", {
+        ascending: true,
+      });
+
+    if (commentError) {
+      console.error(commentError);
+
+      return res.status(500).json({
+        message: commentError.message,
+      });
+    }
+
+    // Count likes
+    const { count } = await supabase
+      .from("likes")
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq("post_id", postId);
+
+    const formattedComments = comments.map((comment) => ({
+      id: comment.id,
+      text: comment.text,
+      postId: comment.post_id,
+      authorId: comment.author_id,
+      author: comment.users?.username || "Unknown",
+      createdAt: comment.created_at,
+    }));
+
+    res.json({
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      image: post.image,
+
+      authorId: post.author_id,
+
+      author:
+        post.users?.username ||
+        "Unknown",
+
+      createdAt:
+        post.created_at,
+
+      likeCount:
+        count || 0,
+
+      comments:
+        formattedComments,
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      message: "Server Error",
+    });
   }
-
-  db.posts = db.posts.filter((p) => p.id !== postId);
-  db.comments = db.comments.filter((c) => c.postId !== postId);
-  db.likes = db.likes.filter((l) => l.postId !== postId);
-  writeDB(db);
-
-  res.json({ message: 'Post deleted successfully.' });
 });
+/* ===========================
+      CREATE POST
+=========================== */
 
-// ADD a comment to a post (protected route)
-router.post('/:id/comments', authMiddleware, (req, res) => {
-  const { text } = req.body;
-  if (!text) return res.status(400).json({ message: 'Comment text is required.' });
+router.post(
+  "/",
+  authMiddleware,
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      const { title, content } = req.body;
 
-  const db = readDB();
-  const postId = parseInt(req.params.id);
-  const post = db.posts.find((p) => p.id === postId);
-  if (!post) return res.status(404).json({ message: 'Post not found.' });
+      if (!title || !content) {
+        return res.status(400).json({
+          message: "Title and content are required.",
+        });
+      }
 
-  const newComment = {
-    id: db.nextCommentId,
-    text,
-    postId,
-    authorId: req.user.id,
-    createdAt: new Date().toISOString()
-  };
+      const imagePath = req.file
+        ? `/uploads/${req.file.filename}`
+        : null;
 
-  db.comments.push(newComment);
-  db.nextCommentId += 1;
-  writeDB(db);
+      const { data, error } = await supabase
+        .from("posts")
+        .insert([
+          {
+            title,
+            content,
+            image: imagePath,
+            author_id: req.user.id,
+          },
+        ])
+        .select()
+        .single();
 
-  res.status(201).json({ ...newComment, author: req.user.username });
-});
+      if (error) {
+        console.error(error);
 
-// LIKE / UNLIKE a post (toggle, protected route)
-router.post('/:id/like', authMiddleware, (req, res) => {
-  const db = readDB();
-  const postId = parseInt(req.params.id);
-  const post = db.posts.find((p) => p.id === postId);
-  if (!post) return res.status(404).json({ message: 'Post not found.' });
+        return res.status(500).json({
+          message: error.message,
+        });
+      }
 
-  const existingLike = db.likes.find(
-    (l) => l.postId === postId && l.userId === req.user.id
-  );
+      res.status(201).json({
+        id: data.id,
+        title: data.title,
+        content: data.content,
+        image: data.image,
+        authorId: data.author_id,
+        createdAt: data.created_at,
+      });
 
-  let liked;
-  if (existingLike) {
-    db.likes = db.likes.filter((l) => l.id !== existingLike.id);
-    liked = false;
-  } else {
-    db.likes.push({ id: db.nextLikeId, postId, userId: req.user.id });
-    db.nextLikeId += 1;
-    liked = true;
+    } catch (err) {
+      console.error(err);
+
+      res.status(500).json({
+        message: "Server Error",
+      });
+    }
   }
+);
+/* ===========================
+        DELETE POST
+=========================== */
 
-  writeDB(db);
-  const likeCount = db.likes.filter((l) => l.postId === postId).length;
-  res.json({ liked, likeCount });
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const postId = parseInt(req.params.id);
+
+    // Check if post exists
+    const { data: post, error } = await supabase
+      .from("posts")
+      .select("*")
+      .eq("id", postId)
+      .single();
+
+    if (error || !post) {
+      return res.status(404).json({
+        message: "Post not found.",
+      });
+    }
+
+    // Only author can delete
+    if (post.author_id !== req.user.id) {
+      return res.status(403).json({
+        message: "You can only delete your own posts.",
+      });
+    }
+
+    // Delete likes
+    const { error: likeError } = await supabase
+      .from("likes")
+      .delete()
+      .eq("post_id", postId);
+
+    if (likeError) {
+      console.error(likeError);
+    }
+
+    // Delete comments
+    const { error: commentError } = await supabase
+      .from("comments")
+      .delete()
+      .eq("post_id", postId);
+
+    if (commentError) {
+      console.error(commentError);
+    }
+
+    // Delete post
+    const { error: deleteError } = await supabase
+      .from("posts")
+      .delete()
+      .eq("id", postId);
+
+    if (deleteError) {
+      return res.status(500).json({
+        message: deleteError.message,
+      });
+    }
+
+    res.json({
+      message: "Post deleted successfully.",
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      message: "Server Error",
+    });
+  }
 });
+/* ===========================
+        ADD COMMENT
+=========================== */
 
+router.post("/:id/comments", authMiddleware, async (req, res) => {
+  try {
+    const postId = parseInt(req.params.id);
+    const { text } = req.body;
+
+    if (!text || text.trim() === "") {
+      return res.status(400).json({
+        message: "Comment text is required.",
+      });
+    }
+
+    // Check post exists
+    const { data: post, error: postError } = await supabase
+      .from("posts")
+      .select("id")
+      .eq("id", postId)
+      .single();
+
+    if (postError || !post) {
+      return res.status(404).json({
+        message: "Post not found.",
+      });
+    }
+
+    // Insert comment
+    const { data: comment, error } = await supabase
+      .from("comments")
+      .insert([
+        {
+          text: text.trim(),
+          post_id: postId,
+          author_id: req.user.id,
+        },
+      ])
+      .select(
+        `
+        *,
+        users!comments_author_id_fkey(username)
+        `
+      )
+      .single();
+
+    if (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: error.message,
+      });
+    }
+
+    res.status(201).json({
+      id: comment.id,
+      text: comment.text,
+      postId: comment.post_id,
+      authorId: comment.author_id,
+      author: comment.users?.username || req.user.username,
+      createdAt: comment.created_at,
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      message: "Server Error",
+    });
+  }
+});
+/* ===========================
+        LIKE / UNLIKE POST
+=========================== */
+
+router.post("/:id/like", authMiddleware, async (req, res) => {
+  try {
+    const postId = parseInt(req.params.id);
+
+    // Check if post exists
+    const { data: post, error: postError } = await supabase
+      .from("posts")
+      .select("id")
+      .eq("id", postId)
+      .single();
+
+    if (postError || !post) {
+      return res.status(404).json({
+        message: "Post not found.",
+      });
+    }
+
+    // Check if user already liked this post
+    const { data: existingLike } = await supabase
+      .from("likes")
+      .select("*")
+      .eq("post_id", postId)
+      .eq("user_id", req.user.id)
+      .maybeSingle();
+
+    let liked = false;
+
+    if (existingLike) {
+      // Unlike
+      const { error } = await supabase
+        .from("likes")
+        .delete()
+        .eq("id", existingLike.id);
+
+      if (error) {
+        return res.status(500).json({
+          message: error.message,
+        });
+      }
+
+      liked = false;
+
+    } else {
+
+      // Like
+      const { error } = await supabase
+        .from("likes")
+        .insert([
+          {
+            post_id: postId,
+            user_id: req.user.id,
+          },
+        ]);
+
+      if (error) {
+        return res.status(500).json({
+          message: error.message,
+        });
+      }
+
+      liked = true;
+    }
+
+    // Get latest like count
+    const { count } = await supabase
+      .from("likes")
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq("post_id", postId);
+
+    res.json({
+      liked,
+      likeCount: count || 0,
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      message: "Server Error",
+    });
+  }
+});
 module.exports = router;

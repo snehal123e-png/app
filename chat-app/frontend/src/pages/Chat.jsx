@@ -3,11 +3,12 @@ import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import api from "../api";
 import { connectSocket } from "../socket";
+import { useNavigate } from "react-router-dom";
 
 function Chat({ user, onLogout }) {
   const [rooms, setRooms] = useState([]);
   const [users, setUsers] = useState([]);
-
+  const [unread, setUnread] = useState({});
   const [onlineUserIds, setOnlineUserIds] = useState([]);
   const [lastSeen, setLastSeen] = useState({});
 
@@ -20,8 +21,15 @@ function Chat({ user, onLogout }) {
   const socketRef = useRef(null);
 
   const typingTimeout = useRef(null);
-
+  const navigate = useNavigate();
   useEffect(() => {
+    if (
+      Notification.permission !== "granted"
+    ) {
+
+      Notification.requestPermission();
+
+    }
     const socket = connectSocket();
 
     socketRef.current = socket;
@@ -78,20 +86,94 @@ function Chat({ user, onLogout }) {
 
     socket.on("private:message", (msg) => {
 
+
       const otherId =
         msg.fromId === user.id
-          ? msg.toId
-          : msg.fromId;
+          ?
+          msg.toId
+          :
+          msg.fromId;
+
+
 
       const key = `private-${otherId}`;
 
+
+
       setConversations(prev => ({
+
         ...prev,
-        [key]: [...(prev[key] || []), msg]
+
+        [key]: [
+          ...(prev[key] || []),
+          msg
+        ]
+
       }));
 
-    });
 
+
+
+      // ==========================
+      // Unread Count
+      // ==========================
+
+
+      if (selected?.id !== otherId) {
+
+
+        setUnread(prev => ({
+
+          ...prev,
+
+          [otherId]:
+            (prev[otherId] || 0) + 1
+
+        }));
+
+
+
+        // Sound Notification
+
+        const audio =
+          new Audio(
+            "/sounds/message.mp3"
+          );
+
+
+        audio.play()
+          .catch(() => { });
+
+
+
+
+        // Browser Notification
+
+        if (Notification.permission === "granted") {
+
+
+          new Notification(
+            msg.senderName,
+            {
+
+              body:
+                msg.text || "New message",
+
+              icon:
+                "/logo192.png"
+
+            }
+
+          );
+
+
+        }
+
+
+      }
+
+
+    });
     // ----------------------
     // Room Typing
     // ----------------------
@@ -141,6 +223,19 @@ function Chat({ user, onLogout }) {
   }, []);
 
   async function selectConversation(conv) {
+    if (conv.type === "private") {
+
+
+      setUnread(prev => ({
+
+        ...prev,
+
+        [conv.id]: 0
+
+      }));
+
+
+    }
 
     setSelected(conv);
 
@@ -160,6 +255,27 @@ function Chat({ user, onLogout }) {
           : `/chat/private/${conv.id}`;
 
       const res = await api.get(endpoint);
+      if (conv.type === "private") {
+
+        res.data.forEach(msg => {
+
+          if (
+            msg.toId === user.id &&
+            msg.status !== "read"
+          ) {
+
+            socketRef.current.emit(
+              "message:read",
+              {
+                messageId: msg.id
+              }
+            );
+
+          }
+
+        });
+
+      }
 
       setConversations(prev => ({
         ...prev,
@@ -200,19 +316,27 @@ function Chat({ user, onLogout }) {
 
     if (!selected) return;
 
-    if (selected.type === "room") {
 
-      socketRef.current.emit("room:typing", {
-        roomId: selected.id
-      });
+    if (selected.type === "private") {
 
-    } else {
-
-      socketRef.current.emit("private:typing", {
-        toUserId: selected.id
-      });
+      socketRef.current.emit(
+        "private:typing",
+        {
+          toUserId: selected.id
+        }
+      );
 
     }
+
+
+    clearTimeout(typingTimeout.current);
+
+
+    typingTimeout.current = setTimeout(() => {
+
+      setTypingUser(null);
+
+    }, 1500);
 
   }
 
@@ -233,9 +357,62 @@ function Chat({ user, onLogout }) {
 
         <h2>WhatsApp Chat</h2>
 
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
 
-          {user.username}
+          <img
+            className="avatar"
+            src={
+              user.photo
+                ? `http://localhost:5001${user.photo}`
+                : `https://ui-avatars.com/api/?name=${user.username}`
+            }
+            alt=""
+          />
+
+          <b>{user.username}</b>
+
+          <button onClick={() => navigate("/profile")}>
+            Profile
+          </button>
+          <button
+
+            onClick={() =>
+              navigate("/starred")
+            }
+
+          >
+
+            ⭐ Starred
+
+          </button>
+
+          <button onClick={() => navigate("/search")}>
+            New Chat
+          </button>
+          <button
+            onClick={() => navigate("/status")}
+          >
+            Status
+          </button>
+          <button
+            onClick={() =>
+              navigate("/create-group")
+            }
+          >
+            Create Group
+          </button>
+          <button
+
+            onClick={() =>
+              navigate("/group-info")
+            }
+
+          >
+            Group Info
+          </button>
+          <button onClick={() => navigate("/requests")}>
+            Requests
+          </button>
 
           <button onClick={onLogout}>
             Logout
@@ -253,17 +430,48 @@ function Chat({ user, onLogout }) {
           selected={selected}
           onlineUserIds={onlineUserIds}
           lastSeen={lastSeen}
+          unread={unread}
+          currentUser={user}
           onSelect={selectConversation}
         />
-
         {selected && (
 
           <ChatWindow
-            selectedUser={selected}
+
+            selectedUser={
+              selected.type === "private"
+                ? selected
+                : null
+            }
+
+
+            selectedRoom={
+              selected.type === "room"
+                ? selected
+                : null
+            }
+
+
             messages={currentMessages}
-            sendMessage={handleSend}
+
+
             currentUser={user.id}
+
+            sendMessage={handleSend}
+            onlineUserIds={onlineUserIds}
+
+
+            lastSeen={lastSeen}
+
+
+            typingUser={typingUser}
+
+
+            handleTyping={handleTyping}
+
+
           />
+
 
         )}
 
